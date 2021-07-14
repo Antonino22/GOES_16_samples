@@ -138,7 +138,6 @@ def map_settings(data, extent, Band, fig, ax):
     # Set lat/lon ticks
     ax.tick_params(length=5, direction='out', labelsize=10, pad=5)
 
-
     ax.set_extent([extent[0], extent[2], extent[1], extent[3]], ccrs.PlateCarree())
 
     # Define the image extent
