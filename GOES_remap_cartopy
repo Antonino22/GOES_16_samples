@@ -4,11 +4,13 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 os.environ['PROJ_LIB'] = '/Users/anthonycrespo/anaconda3/pkgs/proj4-5.2.0-h6de7cb9_1006/share/proj'
 import matplotlib.patheffects as PathEffects
+import matplotlib.ticker as mticker
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import cartopy.io.shapereader as shpreader
 from netCDF4 import Dataset
+from osgeo import gdal
 import datetime
 import glob
 import pandas as pd
@@ -20,7 +22,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-Extent = {'Argentina': [-66., -34.5, -62.25, -31.]}   
+Extent = {'Argentina': [-66., -34.5, -62.25, -31.], 'Feb8': [-76, -58, -51, -20], 
+          'Feb8-NC': [-66., -34.5, -62.25, -31.], 'Dec13': [-76, -58, -51, -20], 
+          'Oct24': [-76, -58, -51, -20]}   
 
 all_reports = {'lat':[-31.470844, -31.422844, -31.431458, -31.421580, -31.435851, -32.201393, -31.4201, 
                       -31.434703, -31.492307, -31.411644, -31.335028],
@@ -35,7 +39,7 @@ all_reports = {'lat':[-31.470844, -31.422844, -31.431458, -31.421580, -31.435851
                         "18:32", "18:35", "19:27"]}
 report = pd.DataFrame (all_reports, columns = ['lat','lon','cities','date','time'])
 
-def sat_variables(path):
+def sat_variables(path, dis):
     nc = Dataset(path, 'r')
 
     # Calculate the image extent 
@@ -48,11 +52,30 @@ def sat_variables(path):
     # Read the central longitude
     longitude = nc.variables['goes_imager_projection'].longitude_of_projection_origin
 
-    # Read the semi major axis
-    a = nc.variables['goes_imager_projection'].semi_major_axis
+    if dis == '4':
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis + 4572
 
-    # Read the semi minor axis
-    b = nc.variables['goes_imager_projection'].semi_minor_axis
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis + 9144
+    elif dis == '9':
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis + 9144
+
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis + 9144
+    elif dis == '15':
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis + 15240
+
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis + 15240
+    else:
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis 
+
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis
     
     # Flattening factor
     f = 1/nc.variables['goes_imager_projection'].inverse_flattening
@@ -122,24 +145,11 @@ def abi_plot_title(fname,Band):
     Name = 'GOES-' + fname[-53:-51] + '/ABI' + ' ' + 'Band ' + Band1
     Date = date + ',  ' + fname[-42:-40] + ':' + fname[-40:-38] + ' UTC' 
 
-    plt.title(' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + Name + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' '  + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' +
-    ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' 
-    + Date + ' ' + ' ' + ' ' + ' ', y=1, size=20, weight='bold')
+    plt.title( Name + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' '  + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' '  + ' ' + ' ' + Date , y=1, size=10, weight='bold')
 
     #return abi_title
 
-def map_settings(data, extent, Band, fig, ax):
-    # Set up and label the lat/lon grid
-    ax.xaxis.set_major_formatter(LongitudeFormatter())
-    ax.yaxis.set_major_formatter(LatitudeFormatter())
-    ax.set_xticks(lon_ticks, crs=ccrs.PlateCarree())
-    ax.set_yticks(lat_ticks, crs=ccrs.PlateCarree())
-    
-    # Set lat/lon ticks
-    ax.tick_params(length=5, direction='out', labelsize=10, pad=5)
-
-    ax.set_extent([extent[0], extent[2], extent[1], extent[3]], ccrs.PlateCarree())
-
+def plot_data(data, extent, Band, ax):
     # Define the image extent
     img_extent = [extent[0], extent[2], extent[1], extent[3]]
     
@@ -150,34 +160,47 @@ def map_settings(data, extent, Band, fig, ax):
 
     # Plot the GOES-16 channel with the converted CPT colors
     if Band <= 6:
-        img = ax.imshow(data, origin='upper', cmap='Greys_r', vmin=0., vmax=1.)
+        img = ax.imshow(data, origin='upper', cmap='Greys_r', vmin=0., vmax=1., extent=img_extent)
+        return img, 'Greys_r'
 
     else:
         # Plot the GOES-16 channel with the converted CPT colors (you may alter the min and max to match your preference)
-        img = ax.imshow(data, origin='upper', cmap=cpt_convert, vmin=162, vmax=330) 
+        img = ax.imshow(data, origin='upper', cmap=cpt_convert, vmin=162, vmax=330, extent=img_extent) 
+        return img, cpt_convert
 
-    # Add a colorbar
-    plt.colorbar(img, label='Brightness Temperatures (°K)', extend='both', orientation='horizontal', pad=0.05, fraction=0.05)    
+
+def map_settings(data, extent, Band, fig, ax, proj):
+    
+    #Set the extent of the image
+    ax.set_extent([extent[0], extent[2], extent[1], extent[3]], proj) 
 
     # Add states and provinces
     shapefile = list(shpreader.Reader('/Users/anthonycrespo/Desktop/New_code_for_plotting/arg_adm1/ARG_adm1.shp').geometries())
-    ax.add_geometries(shapefile, ccrs.PlateCarree(), edgecolor='Black',facecolor='none', zorder=2)
+    ax.add_geometries(shapefile, proj, edgecolor='Black',facecolor='none', zorder=2)
 
     # Add countries
     shapefile = list(shpreader.Reader('/Users/anthonycrespo/Desktop/New_code_for_plotting/Countries_Shape/ne_10m_admin_0_countries.shp').geometries())
-    ax.add_geometries(shapefile, ccrs.PlateCarree(), edgecolor='Black',facecolor='none', zorder=3)
+    ax.add_geometries(shapefile, proj, edgecolor='Black',facecolor='none', zorder=3)
 
     # Add coastline
     ax.coastlines(resolution='50m', zorder=4)
+    
+    #Lat/Long lines
+    gl = ax.gridlines(crs=proj, draw_labels=True, linewidth=2, color='gray', alpha=0.5, linestyle='--')
+    gl.xlabels_top = False
 
-    ax.gridlines(color='gray', alpha=0.5, linestyle='--', linewidth=0.5)
+    #Removes Grid lines from insoide the plot
+    gl.xlines = False
+    gl.ylines = False
+
+    ax.tick_params(length=5, direction='out', labelsize=10, pad=5)
 
     # Remove the outline border
-    #ax.outline_patch.set_visible(False)    
+    #x.outline_patch.set_visible(False)    
 
-def abi_data(fname, Band, extent, resolution, variable): 
+def abi_data(fname, Band, extent, resolution, variable, dis): 
     
-    H, a, b, f, longitude, x1, y1, x2, y2 = sat_variables(fname)
+    H, a, b, f, longitude, x1, y1, x2, y2 = sat_variables(fname, dis)
     
     #Creates reprojection, file necesdaary to create geotiff
     grid = remap(fname, variable, extent, resolution, H, a, b, f, longitude, x1, y1, x2, y2)
@@ -200,8 +223,22 @@ def abi_data(fname, Band, extent, resolution, variable):
 
         Unit = "Reflectance"
      
-    return data  
+    return data, grid 
 
+def colorbar(fig, ax, cpt):
+    
+    #plt.colorbar(img, label='Brightness Temperatures (°K)', extend='both', orientation='horizontal', pad=0.05, fraction=0.05)   
+    last_axes = plt.gca()
+    cbar_ax = fig.add_axes([0, 0, 0, 0])
+    plt.draw()
+    posn = ax.get_position()
+    cbar_ax.set_position([0.27, posn.y0 - 0.035, 0.5, 0.02])
+    cb = mpl.colorbar.ColorbarBase(cbar_ax, cmap=cpt, orientation='horizontal', ticklocation='auto')
+    cb.set_label(label='Brightness Temperatures (°K)', size=10, weight='bold')
+    cb.draw_all()
+    cb.ax.set_xticklabels(['170', '180', '190', '200', '220', '240', '260', '280', '300', '320'])
+    cb.ax.tick_params(labelsize=10)
+    plt.sca(last_axes)
 
 def plot_abi(save_path, file_res, extent, resolution, variable, report, image, geotif, dis):
     
@@ -209,17 +246,25 @@ def plot_abi(save_path, file_res, extent, resolution, variable, report, image, g
   
     # Define the projection
     proj = ccrs.PlateCarree()
+    #proj = ccrs.Geostationary(central_longitude=0.0, satellite_height=35785831)
 
     # Choose the plot size (width x height, in inches) / Use the PlateCarree projection in cartopy
+    #Set up figure
+    DPI = file_res
     fig = plt.figure(figsize=(8, 10))
-    ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=-103.3))
-    ax.set_extent(extent, crs=ccrs.PlateCarree())
+    ax = plt.axes(projection=proj)
+    ax.set_extent(extent, crs=proj)
     
     # Get data
-    data = abi_data(fname, Band, extent, resolution, variable)
+    data, grid = abi_data(fname, Band, extent, resolution, variable, dis)
+
+    #Plot data
+    img, cpt = plot_data(data, extent, Band, ax)
+
+    colorbar(fig, ax, cpt)
     
     # Format map
-    map_settings(data, extent, Band, fig, ax)
+    map_settings(data, extent, Band, fig, ax, proj)
     
     # Add title
     abi_plot_title(fname,Band)
@@ -272,8 +317,6 @@ geotif = 'no'
 variable = 'CMI'
 view = 'Argentina'
 extent = Extent[view]
-lon_ticks = [-120, -118, -116]
-lat_ticks = [32, 33, 34, 35]
 dis = '15'
 resolution = 1.
 
