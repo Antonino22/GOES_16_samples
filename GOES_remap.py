@@ -8,7 +8,6 @@ from remap_copy import remap
 from cpt_convert import loadCPT
 from matplotlib.colors import LinearSegmentedColormap
 from netCDF4 import Dataset
-from matplotlib.patches import Rectangle
 from osgeo import gdal
 import glob
 import pandas as pd
@@ -19,11 +18,46 @@ import warnings
 #Ignore deprecated warnings
 warnings.filterwarnings("ignore")
 
-def sat_variables(path):
+
+all_reports = {'lat':[-31.470844, -31.422844, -31.431458, -31.421580, -31.435851, -32.201393, -31.4201, 
+                      -31.434703, -31.492307, -31.411644, -31.335028],
+               'lon':[-64.541380, -64.497452, -64.499612, -64.500763, -64.456595, -64.452606, -64.1888, 
+                      -64.504108, -64.544306, -64.506675, -64.279508],
+               'cities': ["Icho Cruz","San Lorenzo","Tupungato", "Calle Tokio", "San Nicolas", 
+                          "Villa del Dique", "Cordoba", "Villa Carlos Paz", "San Antonion de Redondo", 
+                          "Villa Carlos Paz N", "Villa Allende"],
+               'date': ['Feb 8 18', 'Feb 8 18', 'Feb 8 18', 'Feb 8 18', 'Feb 8 18', 'Dec 13 18', "Dec 13 18", 
+                        "Oct 24 20", "Oct 24 20", "Oct 24 20", "Oct 24 20"],
+               'time': ["18:50", "19:20", "19:20", "19:30", "19:45","02:20", "03:00","18:20", 
+                        "18:32", "18:35", "19:27"]}
+report = pd.DataFrame (all_reports, columns = ['lat','lon','cities','date','time'])
+
+def ext(extent1):
+    extent = extent1
+    if extent == 'Nation':
+        zoom = [-76, -58, -51, -20]
+        return zoom
+    elif extent == 'Dec13':
+        zoom = [-68, -35.5, -60, -31] #Hail event for Dec 13
+        return zoom
+    elif extent == 'Feb8-NC':
+        zoom = [-65.25, -32.25, -63., -31.15]
+        return zoom  
+    elif extent == 'Feb8':
+        zoom = [-66., -34.5, -62.25, -31.]
+        return zoom      
+    elif extent == 'Oct24':
+        zoom = [-64.75, -32., -62., -31.]
+        return zoom      
+    else:
+        pass    
+
+
+def sat_variables(path, dis):
     nc = Dataset(path, 'r')
 
     # Calculate the image extent 
-    H = nc.variables['goes_imager_projection'].perspective_point_height + nc.variables['goes_imager_projection'].semi_major_axis
+    H = nc.variables['goes_imager_projection'].perspective_point_height 
     x1 = nc.variables['x_image_bounds'][0] * H
     x2 = nc.variables['x_image_bounds'][1] * H
     y1 = nc.variables['y_image_bounds'][1] * H
@@ -31,12 +65,31 @@ def sat_variables(path):
     
     # Read the central longitude
     longitude = nc.variables['goes_imager_projection'].longitude_of_projection_origin
+         
+    if dis == '4':
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis + 4572
 
-    # Read the semi major axis
-    a = nc.variables['goes_imager_projection'].semi_major_axis
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis + 9144
+    elif dis == '9':
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis + 9144
 
-    # Read the semi minor axis
-    b = nc.variables['goes_imager_projection'].semi_minor_axis
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis + 9144
+    elif dis == '15':
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis + 15240
+
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis + 15240
+    else:
+        # Read the semi major axis
+        a = nc.variables['goes_imager_projection'].semi_major_axis 
+
+        # Read the semi minor axis
+        b = nc.variables['goes_imager_projection'].semi_minor_axis         
     
     # Flattening factor
     f = 1/nc.variables['goes_imager_projection'].inverse_flattening
@@ -101,11 +154,17 @@ def abi_plot_title(fname,Band):
     Band1 = str(Band)
     
     # Create plot title
-    abi_title = 'GOES-'+ fname[-53:-51] + '/ABI\n' + 'Band ' + Band1 + '\n' + fname[-42:-40] + ':' + fname[-40:-38] + ' UTC, ' + date
-        
-    return abi_title
+    #abi_title =  date + ',  ' + fname[-42:-40] + ':' + fname[-40:-38] + ' UTC' + '             ' + 'GOES-' + fname[-53:-51] + '/ABI' + ' ' + 'Band ' + Band1 
+    Name = 'GOES-' + fname[-53:-51] + '/ABI' + ' ' + 'Band ' + Band1
+    Date = date + ',  ' + fname[-42:-40] + ':' + fname[-40:-38] + ' UTC' 
 
-def map_settings(data, extent, Band, fig):
+    plt.title(' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + Name + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' '  + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' +
+    ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' + ' ' 
+    + Date + ' ' + ' ' + ' ' + ' ', y=1, size=20, weight='bold')
+
+    #return abi_title
+
+def map_settings(data, extent, extent1, Band, fig):
 
     bmap = Basemap(resolution='h', llcrnrlon=extent[0], llcrnrlat=extent[1], urcrnrlon=extent[2], urcrnrlat=extent[3], epsg=4326)
 
@@ -114,11 +173,33 @@ def map_settings(data, extent, Band, fig):
     bmap.readshapefile('/Users/anthonycrespo/Desktop/New_code_for_plotting/arg_adm1/ARG_adm1','ARG_adm1',linewidth=.5,color='black')
     bmap.readshapefile('/Users/anthonycrespo/Desktop/New_code_for_plotting/Countries_Shape/ne_10m_admin_0_countries','ne_10m_admin_0_countries',linewidth=.7,color='black')
 
-    bmap.drawparallels(np.arange(-90.0, 90.0, 4.), linewidth=0, dashes=[4, 4], color='white', labels=[True,
-    True, False, False], fmt='%g', labelstyle="+/-",xoffset=0.05, yoffset=-.50, size=15)
-
-    bmap.drawmeridians(np.arange(0.0, 360.0, 4.), linewidth=0,dashes=[4, 4], color='white', labels=[False,
-    True, False, True], fmt='%g', labelstyle="+/-",xoffset=-0.50, yoffset=0.05, size=15)
+    if extent1=='Nation':
+        bmap.drawparallels(np.arange(-90.0, 90.0, 2.), linewidth=.5, dashes=[4, 4], color='white', labels=[True,
+        True, False, False], fmt='%g', labelstyle="+/-",xoffset=0.05, yoffset=-.50, size=15)
+        bmap.drawmeridians(np.arange(0.0, 360.0, 2.), linewidth=1,dashes=[4, 4], color='white', labels=[False,
+        True, False, True], fmt='%g', labelstyle="+/-",xoffset=-0.50, yoffset=0.05, size=15)
+    elif extent1=='Dec13':
+        bmap.drawparallels(np.arange(-90.0, 90.0, .5), linewidth=0.3,dashes=[4, 4], color='white', labels=[True,
+        True, False, False], fmt='%g', labelstyle="+/-", xoffset=0.05, yoffset=-.50, size=15)
+        bmap.drawmeridians(np.arange(0.0, 360.0, .5), linewidth=1,dashes=[4, 4], color='white', labels=[False,
+        True, False, True], fmt='%g', labelstyle="+/-", xoffset=-0.50, yoffset=0.05, size=15) 
+    elif extent1 == 'Feb8-NC':
+        bmap.drawparallels(np.arange(-90.0, 90.0, .15), linewidth=0.3,dashes=[4, 4], color='white', labels=[True,
+        True, False, False], fmt='%g', labelstyle="+/-", xoffset=0.05, yoffset=-.50, size=15)
+        bmap.drawmeridians(np.arange(0.0, 360.0, .15), linewidth=1,dashes=[4, 4], color='white', labels=[False,
+        True, False, True], fmt='%g', labelstyle="+/-", xoffset=-0.50, yoffset=0.05, size=15)
+    elif extent1 == 'Feb8':
+        bmap.drawparallels(np.arange(-90.0, 90.0, .5), linewidth=0.3, dashes=[4, 4], color='white', 
+        labels=[True,True, False, False], fmt='%g', labelstyle="+/-", xoffset=0.05, yoffset=-.50, size=15)
+        bmap.drawmeridians(np.arange(0.0, 360.0, .5), linewidth=1,dashes=[4, 4], color='white', 
+        labels=[False,False, False, True], fmt='%g', labelstyle="+/-",xoffset=-0.50, yoffset=0.05, size=15)   
+    elif extent1 == 'Oct24':
+        bmap.drawparallels(np.arange(-90.0, 90.0, .15), linewidth=0.3,dashes=[4, 4], color='white', labels=[True,
+        True, False, False], fmt='%g', labelstyle="+/-", xoffset=0.05, yoffset=-.50, size=15)
+        bmap.drawmeridians(np.arange(0.0, 360.0, .2), linewidth=1,dashes=[4, 4], color='white', labels=[False,
+        True, False, True], fmt='%g', labelstyle="+/-", xoffset=-0.50, yoffset=0.05, size=15)        
+    else:
+        pass       
 
     cpt_1 = cpt(Band)
 
@@ -133,14 +214,32 @@ def map_settings(data, extent, Band, fig):
         # Plot the GOES-16 channel with the converted CPT colors (you may alter the min and max to match your preference)
         bmap.imshow(data, origin='upper', cmap=cpt_convert, vmin=162, vmax=330) 
         
-    # Insert the colorbar at the bottom    
-    cb = bmap.colorbar(location='bottom', size = '2%', pad = '2.5%') #size adjust thickness and pad how far away from x-axis
-    cb.set_label(label='Brightness temperatures (K)', size=10, weight='bold')
+    # Insert the colorbar at the bottom
+    if extent1 == 'Nation':    
+        cb = bmap.colorbar(location='bottom', size = '2%', pad = '2.5%') #size adjust thickness and pad how far away from x-axis
+        cb.set_label(label='Brightness temperatures (K)', size=10, weight='bold')
+    elif extent1 == 'Dec13':  
+        cb = bmap.colorbar(location='bottom', size = '2%', pad = '5%') #size adjust thickness and pad how far away from x-axis
+        cb.set_label(label='Brightness temperatures (K)', size=10, weight='bold')
+    elif extent1 == 'Feb8-NC':
+        cb = bmap.colorbar(location='bottom', size = '2%', pad = '10%') #size adjust thickness and pad how far away from x-axis
+        cb.set_label(label='Brightness temperatures (K)', size=10, weight='bold')
+    elif extent1 == 'Feb8':
+        cb = bmap.colorbar(location='bottom', size = '3%', pad = '4.5%') #size adjust thickness and pad how far away from x-axis
+        cb.set_label(label='Brightness temperatures (K)', size=10, weight='bold')     
+    elif extent1 == 'Oct24':
+        cb = bmap.colorbar(location='bottom', size = '2%', pad = '11%') #size adjust thickness and pad how far away from x-axis
+        cb.set_label(label='Brightness temperatures (K)', size=10, weight='bold')        
+    else:
+        pass    
+
+    date = datetime.datetime.strptime(fname[-49:-42], '%Y%j').date().strftime('%Y%m%d') 
+                     
 
     
-def abi_data(fname, Band, extent, resolution, variable): 
+def abi_data(fname, Band, extent, resolution, variable, dis): 
     
-    H, a, b, f, longitude, x1, y1, x2, y2 = sat_variables(fname)
+    H, a, b, f, longitude, x1, y1, x2, y2 = sat_variables(fname, dis)
 
     grid = remap(fname, variable, extent, resolution, H, a, b, f, longitude, x1, y1, x2, y2)
 
@@ -162,12 +261,14 @@ def abi_data(fname, Band, extent, resolution, variable):
 
         Unit = "Reflectance"
      
-    return data      
+    return data, grid      
 
-def plot_abi(save_path, file_res, extent, resolution, variable):
+def plot_abi(save_path, file_res, extent1, resolution, variable, report, image, geotif, dis):
     
     Band = int(fname[-57:-55])
-    
+
+    extent = ext(extent1)
+
     #Set up figure
     DPI = file_res
     fig = plt.figure(figsize=(2000/float(DPI), 2000/float(DPI)), frameon=True, dpi=DPI, edgecolor='w')
@@ -175,44 +276,65 @@ def plot_abi(save_path, file_res, extent, resolution, variable):
     ax.set_axis_off()
     fig.add_axes(ax)
     ax = plt.axis('off')
-    
+
     #Get data
-    data = abi_data(fname, Band, extent, resolution, variable)
+    data, grid = abi_data(fname, Band, extent, resolution, variable, dis)
     
     #Format map
-    map_settings(data, extent, Band, fig)
+    map_settings(data, extent, extent1, Band, fig)
     
     #Add title
-    plt.title(abi_plot_title(fname,Band), pad=10, ma='center', size=12, weight='bold')
-    
-    
-    #Show figure
-    plt.show()
+    #plt.title(abi_plot_title(fname,Band), pad=10, ma='center', size=12, weight='bold')
+    abi_plot_title(fname,Band)
     
     # Save figure as a .png file with "save_name" to specified directory
     date = datetime.datetime.strptime(fname[-49:-42], '%Y%j').date().strftime('%Y%m%d')
     save_name = 'G' + fname[-53:-51] + '_ABI_' + date + '_' + fname[-42:-38]
-    fig.savefig(save_path + save_name, bbox_inches='tight', dpi=file_res)
 
-    # Close file
-    #name.close()
+    #Show figure
+    #plt.show()
 
-    # Erase plot so we can build the next one
+    if image == 'yes':
+        plt.savefig(save_path + save_name, bbox_inches='tight', dpi=file_res)
+    else:
+        pass
+
+    # Export the result to GeoTIFF
+    if geotif == 'yes':
+        driver = gdal.GetDriverByName('GTiff')
+        driver.CreateCopy(save_path + save_name + '.tif', grid, 0)
+    else:
+        pass
+
+    source = fname + '.aux.xml'
+    destination =  fname[0:45] + 'z_aux_files' + fname[59:200]+ '.aux.xml'
+
+    # Move a file from the directory d1 to d2
+    shutil.move(source, destination)
+
+    # Delete aux.xml
+    os.remove(destination) 
+
+    # Close the plot window
     plt.close()
 
 
 # File settings
-file_path = os.getcwd() + '/'  # Directory where ABI data files are located
+#file_path = os.getcwd() + '/'  # Directory where ABI data files are located
+file_path = os.getcwd() + '/' + '02_08_2018' + '/' + 'C11' + '/'
 save_path = os.getcwd() + '/'  # Directory where figures will be saved
 figures = 'single'  # Number of figures to create: 'single' (one data file) or 'multiple' (multiple data files)
-file_name = 'OR_ABI-L2-CMIPF-M3C13_G16_s20180391930384_e20180391941162_c20180391941239.nc'  # For plotting a single file
+file_name = 'OR_ABI-L2-CMIPF-M3C11_G16_s20180391900384_e20180391911151_c20180391911240.nc'  # For plotting a single file
 
 # Plot settings
 file_res = 150  # DPI setting for image resolution
 
 # Mapping settings
+image = 'yes'
+geotif = 'yes'
 variable = 'CMI'
-extent = [-76, -58, -51, -20]
+extent1 = 'Feb8'
+dis = '15'
 resolution = 1.
 
 ##########################################################################################################################
@@ -222,7 +344,7 @@ if __name__ == "__main__":
     if figures == 'single':
         # Open single data file and set file name
         fname = file_path + file_name
-        plot_abi(save_path, file_res, extent, resolution, variable)
+        plot_abi(save_path, file_res, extent1, resolution, variable, report, image, geotif, dis)
         print('Done!')
 
     if figures == 'multiple':
@@ -230,6 +352,6 @@ if __name__ == "__main__":
         file_list = sorted(glob.glob(file_path + '*.nc')) 
         # Loop through data files, making/saving a figure for each data file
         for fname in file_list:
-            plot_abi(save_path, file_res)
+            plot_abi(save_path, file_res, extent1, resolution, variable, report, image, geotif. dis)
         print('Done!')
 
